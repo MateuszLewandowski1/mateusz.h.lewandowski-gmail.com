@@ -174,7 +174,7 @@ def correlation(dataset, threshold=0.6):
                 col_corr.add(colname)
                 if colname in dataset.columns:
                     del dataset[colname]  # deleting the column from the dataset
-
+    print(col_corr)
     return dataset
 
 
@@ -257,45 +257,20 @@ def calculate_woe_iv(dataset, feature):
     return dset, iv
 
 
-
-
-def non_obvious_numerical_data(table):
-    """some of the columns have highly unbalanced distribution of data, qcut would result in errors,
-    also returning names of these columns to later pass it as value not to be considered again"""
-
-    use_cut_no_qcut = ['pct_tl_nvr_dlq', 'num_tl_90g_dpd_24m', 'delinq_2yrs', 'open_act_il', 'tot_coll_amt',
-                       'open_il_24m', 'total_bal_il', 'open_rv_12m', 'inq_fi', 'total_cu_tl', 'inq_last_12m',
-                       'acc_open_past_24mths', 'mort_acc', 'num_accts_ever_120_pd', 'num_actv_bc_tl', 'num_bc_tl',
-                       'percent_bc_gt_75', 'num_il_tl', 'target']
-    for elem in use_cut_no_qcut:
-        if elem != 'target':
-            table[elem] = pd.cut(table[elem], 4)
-    return table[use_cut_no_qcut], use_cut_no_qcut
-
-
-def columns_not_to_bin(table):
-
-    dont_bin_do_not_do_anything_treat_as_categorical = ['chargeoff_within_12_mths', 'open_il_12m',
-                                                        'open_acc_6m', 'pub_rec', 'inq_last_6mths',
-                                                        'collections_12_mths_ex_med', 'target']
-
-    return table[dont_bin_do_not_do_anything_treat_as_categorical], dont_bin_do_not_do_anything_treat_as_categorical
-
-
 def conc_tables(t1, t2, t3):  # concatenates tables
         return pd.concat([t1, t2, t3])
 
 
-def standardize(table):
+
+def std_test_as_train(X_train, X_test):
     from sklearn.preprocessing import StandardScaler
 
-    for col in table.columns:
-        if str(col)[:3] != 'bool':
-            scaler = StandardScaler()
-            scaler.fit(table[col].to_numpy().reshape(-1, 1))
-            table[col] = scaler.transform(table[col].to_numpy().reshape(-1, 1))
-    return table
-
+    for col in X_train.columns:
+        scaler = StandardScaler()
+        scaler.fit(X_train[col].to_numpy().reshape(-1, 1))
+        X_train[col] = scaler.transform(X_train[col].to_numpy().reshape(-1, 1))
+        X_test[col] = scaler.transform(X_test[col].to_numpy().reshape(-1, 1))
+    return X_train, X_test
 
 
 def stack(X_train, y_train, X_test, y_test):
@@ -321,6 +296,29 @@ def stack(X_train, y_train, X_test, y_test):
     print('Final prediction score: [%.8f]' % f1_score(y_test, y_pred))
     print(classification_report(y_test, y_pred))
     print(roc_auc_score(y_test, y_pred))
+
+
+def stack_regression(X_train, y_train, X_test, y_test):
+    from sklearn.linear_model import LinearRegression
+    from vecstack import stacking
+    from sklearn import linear_model
+    import xgboost as xgb
+    from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+    models = [linear_model.SGDRegressor(max_iter=1000, tol=1e-3), LinearRegression(), xgb.XGBRegressor(n_jobs=-1)]
+
+    S_train, S_test = stacking(models, X_train, y_train, X_test, regression=False, verbose=2)
+
+    model = xgb.XGBRegressor(seed=0, n_jobs=-1, learning_rate=0.1,n_estimators=100, max_depth=3)
+
+    # Fit 2-nd level model
+    model = model.fit(S_train, y_train)
+
+    # Predict
+    y_pred = model.predict(S_test)
+
+
+    print(mean_squared_error(y_test, y_pred))
 
 
 def upsample_data(X_train, y_train):
@@ -461,8 +459,9 @@ def date_feature(date):
     datetime_obj = parser.parse(date)
     weekday = datetime_obj.weekday()  # 0 is monday
     month = datetime_obj.month
+    year = datetime_obj.year
     is_holiday = datetime_obj in us_holidays or weekday==6 or weekday==5  # includes weekends as holidays
-    return weekday, month, is_holiday
+    return weekday, month, year, int(is_holiday)
 
 
 def mean_encoding(table, column, target, drop=False):
@@ -527,3 +526,5 @@ def compare_data_distributions(table1, table2):
         return True
     else:
         return False
+
+
